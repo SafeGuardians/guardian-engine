@@ -51,14 +51,14 @@ class GuardianPDFRedactor:
         additional_keywords: List[str] = None,
         custom_regex: List[str] = None,
         entities: List[str] = None,
+        redaction_style: str = "blackbox"
     ) -> Dict[str, Any]:
         """
         Analyze and redact PDF using Guardian analysis with comprehensive redaction
         """
         try:
-            # Open document in update mode
             doc = fitz.open(pdf_path)
-            detected_entities = set()
+            detected_entities = {}
 
             # First pass: Entity Detection
             for page_num in range(len(doc)):
@@ -71,78 +71,90 @@ class GuardianPDFRedactor:
                     language=language,
                     entities=entities
                 )
-                print(f"Page {page_num + 1} - Detected entities: {analyzer_results}")
-
-                # Extract entities from analysis
-                page_entities = self.extract_entities_from_analysis(
-                    analyzer_results, page_text
-                )
-                detected_entities.update(page_entities)
+                
+                # Store entities with their types
+                for result in analyzer_results:
+                    entity_text = page_text[result.start:result.end]
+                    if len(entity_text.strip()) > 2:
+                        detected_entities[entity_text] = result.entity_type
 
             # Prepare redaction configuration
             redaction_config = {
-                "keywords": list(detected_entities),
-                "regex_patterns": [],
+                "keywords": list(detected_entities.keys()),
+                "regex_patterns": self.default_regex_patterns.copy(),
             }
-
-            # Validate and add regex patterns
-            for pattern in self.default_regex_patterns:
-                try:
-                    re.compile(pattern)  # Test if pattern is valid
-                    redaction_config["regex_patterns"].append(pattern)
-                except re.error:
-                    logger.warning(f"Invalid regex pattern skipped: {pattern}")
 
             # Add additional keywords and patterns
             if additional_keywords:
                 redaction_config["keywords"].extend(additional_keywords)
             if custom_regex:
-                for pattern in custom_regex:
-                    try:
-                        re.compile(pattern)  # Test if pattern is valid
-                        redaction_config["regex_patterns"].append(pattern)
-                    except re.error:
-                        logger.warning(f"Invalid custom regex pattern skipped: {pattern}")
+                redaction_config["regex_patterns"].extend(custom_regex)
 
             # Perform Redaction
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 page_text = page.get_text()
 
-                # First redact keywords
-                for keyword in redaction_config["keywords"]:
-                    try:
-                        instances = self.find_text_instances(page, keyword)
-                        for rect in instances:
-                            page.add_redact_annot(rect)
-                            page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
-                    except Exception as e:
-                        logger.warning(f"Error redacting keyword '{keyword}': {e}")
+                # Get all targets including regex matches
+                redact_targets = redaction_config["keywords"] + [
+                    re.findall(pattern, page_text)[0]
+                    for pattern in redaction_config["regex_patterns"]
+                    if re.findall(pattern, page_text)
+                ]
 
-                # Then handle regex patterns
-                for pattern in redaction_config["regex_patterns"]:
+                # Sort targets by length (longest first) to avoid partial matches
+                redact_targets = sorted(redact_targets, key=len, reverse=True)
+
+                for target in redact_targets:
                     try:
-                        matches = re.finditer(pattern, page_text)
-                        for match in matches:
-                            target = match.group()
-                            instances = self.find_text_instances(page, target)
-                            for rect in instances:
+                        instances = self.find_text_instances(page, target)
+                        
+                        for rect in instances:
+                            if redaction_style == "blackbox":
+                                # Traditional black box redaction
                                 page.add_redact_annot(rect)
                                 page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0))
+                            else:  # label style
+                                # Get entity type (default to "CUSTOM" for additional keywords)
+                                entity_type = detected_entities.get(target, "CUSTOM")
+                                
+                                # White out original text
+                                page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+                                
+                                # Calculate center position for text
+                                label = f"[{entity_type}]"
+                                font_size = 8  # Adjust this value if needed
+                                
+                                # Calculate text position to center it in the rectangle
+                                text_width = len(label) * font_size * 0.5  # Approximate width
+                                text_height = font_size
+                                
+                                x = rect.x0 + (rect.width - text_width) / 2
+                                y = rect.y0 + (rect.height - text_height) / 2 + text_height * 0.5
+                                
+                                # Insert centered label
+                                page.insert_text(
+                                    point=(x, y),
+                                    text=label,
+                                    fontsize=font_size,
+                                    color=(0, 0, 0),
+                                    render_mode=0  # Normal text rendering
+                                )
                     except Exception as e:
-                        logger.warning(f"Error processing regex pattern '{pattern}': {e}")
+                        logger.error(f"Error processing '{target}': {e}")
 
-                # Apply redactions for this page
-                page.apply_redactions()
+                if redaction_style == "blackbox":
+                    page.apply_redactions()
 
-            # Save the redacted document
+            # Save the processed document
             doc.save(output_path)
             doc.close()
 
             return {
                 "status": "success",
-                "detected_entities": list(detected_entities),
+                "detected_entities": detected_entities,
                 "output_path": output_path,
+                "redaction_style": redaction_style
             }
 
         except Exception as e:

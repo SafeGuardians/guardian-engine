@@ -238,8 +238,12 @@ class Server:
 
                 # Get parameters
                 language = request.form.get("language", "en")
+                redaction_style = request.form.get("redaction_style", "blackbox")
+                
+                if redaction_style not in ["blackbox", "label"]:
+                    return jsonify({"error": "Invalid redaction style"}), 400
 
-                # Parse and validate entities
+                # Parse and validate ent@ities
                 try:
                     entities = json.loads(request.form.get("entities", "[]"))
                     if not isinstance(entities, list):
@@ -269,6 +273,7 @@ class Server:
                         additional_keywords=additional_keywords,
                         custom_regex=custom_regex,
                         entities=entities,
+                        redaction_style=redaction_style
                     )
 
                     self.logger.info(f"Redaction completed: {result}")
