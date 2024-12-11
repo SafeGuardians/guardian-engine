@@ -55,7 +55,7 @@ class Server:
         ).create_engine()
         self.pdf_redactor = GuardianPDFRedactor(analyzer_engine=self.engine)
         # self.pdf_redactor = AdvancedPDFRedactor()
-        self.logger.info(WELCOME_MESSAGE)
+        print(WELCOME_MESSAGE)
 
         self.image_redactor = PresidioImageRedactor()
 
