@@ -10,6 +10,7 @@ from typing import Tuple
 import numpy as np
 
 from flask import Flask, Response, jsonify, request, send_file
+from flask_cors import CORS
 from guardian_analyzer import AnalyzerEngine, AnalyzerEngineProvider, AnalyzerRequest
 from werkzeug.exceptions import HTTPException
 
@@ -20,7 +21,7 @@ from new_pdf_redactor import GuardianPDFRedactor
 # from adv_pdf_redactor import AdvancedPDFRedactor
 from image_redactor import PresidioImageRedactor
 
-DEFAULT_PORT = "3000"
+PORT = "3000"
 
 LOGGING_CONF_FILE = "logging.ini"
 
@@ -42,6 +43,7 @@ class Server:
         self.logger = logging.getLogger("guardian-analyzer")
         self.logger.setLevel(os.environ.get("LOG_LEVEL", self.logger.level))
         self.app = Flask(__name__)
+        CORS(self.app)
 
         analyzer_conf_file = os.environ.get("ANALYZER_CONF_FILE")
         nlp_engine_conf_file = os.environ.get("NLP_CONF_FILE")
@@ -291,7 +293,7 @@ class Server:
                         self.logger.warning(f"Error cleaning up temporary files: {e}")
 
             except Exception as e:
-                self.logger.error(f"Error processing PDF: {e}")
+                print(f"Error processing PDF: {e}")
                 return (
                     jsonify({"error": str(e), "message": "Failed to process PDF"}),
                     500,
@@ -440,6 +442,6 @@ class Server:
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", DEFAULT_PORT))
+    port = int(os.environ.get("PORT", PORT))
     server = Server()
     server.app.run(host="0.0.0.0", port=port, debug=True)

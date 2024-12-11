@@ -73,6 +73,8 @@ class PresidioImageRedactor:
             # Extract text using OCR
             text = pytesseract.image_to_string(processed_image)
 
+            print(f"Extracted text: {text}")
+
             # Get word boxes from OCR
             boxes = pytesseract.image_to_data(
                 processed_image, output_type=pytesseract.Output.DICT
@@ -85,7 +87,7 @@ class PresidioImageRedactor:
 
             # self.logger.info(f"Detected entities: {analyzer_results}")
             for result in analyzer_results:
-                self.logger.info(
+                print(
                     f"Detected entity: {result.entity_type} :- {text[result.start:result.end]} Score: {result.score}"
                 )
 
@@ -126,4 +128,3 @@ class PresidioImageRedactor:
         except Exception as e:
             self.logger.error(f"Error during image redaction: {str(e)}")
             raise
-
